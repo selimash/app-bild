@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spotev — Describe it. Build it.</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --accent: #6c5ce7;
+    --accent-hover: #5a4bd1;
+    --text: #e8e9ed;
+    --muted: #9aa0ab;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  header h1 {
+    font-size: 2rem;
+    margin: 0;
+    background: linear-gradient(90deg, #6c5ce7, #a29bfe);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header p {
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .container {
+    width: 100%;
+    max-width: 760px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 120px;
+    background: #10131a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    padding: 14px;
+    font-size: 1rem;
+    resize: vertical;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: background 0.2s, transform 0.1s;
+  }
+  button:active { transform: scale(0.97); }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    flex: 1;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-mic {
+    background: #232733;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-mic.listening {
+    background: #e74c3c;
+    color: white;
+  }
+  .btn-copy {
+    background: #232733;
+    color: var(--text);
+  }
+  .btn-copy:hover { background: #2d3240; }
+  .output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .output-header span {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  pre {
+    background: #10131a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    overflow-x: auto;
+    max-height: 420px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .footer-note {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-top: 10px;
+  }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Spotev</h1>
+  <p>Describe the app you want. Get the code.</p>
+</header>
+
+<div class="container">
+  <div class="panel">
+    <textarea id="promptInput" placeholder="e.g. A portfolio site with a dark theme, a hero section with my name, a projects grid, and a contact form..."></textarea>
+    <div class="controls">
+      <button class="btn-mic" id="micBtn">🎤 Speak</button>
+      <button class="btn-primary" id="generateBtn">Generate Code</button>
+    </div>
+  </div>
+
+  <div class="panel" id="outputPanel" style="display:none;">
+    <div class="output-header">
+      <span>index.html</span>
+      <button class="btn-copy" id="copyBtn">Copy</button>
+    </div>
+    <pre id="outputCode"></pre>
+  </div>
+
+  <p class="footer-note">Spotev — built by Selim Ashraf</p>
+</div>
+
+<div class="toast" id="toast">Copied to clipboard</div>
+
+<script>
+  const promptInput = document.getElementById('promptInput');
+  const generateBtn = document.getElementById('generateBtn');
+  const micBtn = document.getElementById('micBtn');
+  const outputPanel = document.getElementById('outputPanel');
+  const outputCode = document.getElementById('outputCode');
+  const copyBtn = document.getElementById('copyBtn');
+  const toast = document.getElementById('toast');
+
+  // Voice input using the Web Speech API
+  let recognition;
+  let listening = false;
+
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      promptInput.value += (promptInput.value ? ' ' : '') + transcript;
+    };
+
+    recognition.onend = () => {
+      listening = false;
+      micBtn.classList.remove('listening');
+      micBtn.textContent = '🎤 Speak';
+    };
+
+    micBtn.addEventListener('click', () => {
+      if (!listening) {
+        recognition.start();
+        listening = true;
+        micBtn.classList.add('listening');
+        micBtn.textContent = '● Listening...';
+      } else {
+        recognition.stop();
+      }
+    });
+  } else {
+    micBtn.addEventListener('click', () => {
+      alert('Voice input is not supported in this browser. Try Chrome.');
+    });
+  }
+
+  // Placeholder generator — replace generateFromPrompt with a real API call
+  // to an AI model to produce actual tailored code from the description.
+  function generateFromPrompt(promptText) {
+    const safeTitle = promptText.split(' ').slice(0, 6).join(' ') || 'My App';
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${safeTitle}</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 40px; background: #fafafa; }
+  h1 { color: #222; }
+  p { color: #555; }
+</style>
+</head>
+<body>
+  <h1>${safeTitle}</h1>
+  <p>Generated starter based on your description:</p>
+  <p><em>${promptText.replace(/</g, '&lt;')}</em></p>
+  <!-- Build out the rest of the app here -->
+</body>
+</html>`;
+  }
+
+  generateBtn.addEventListener('click', () => {
+    const text = promptInput.value.trim();
+    if (!text) {
+      alert('Type or speak a description first.');
+      return;
+    }
+    const code = generateFromPrompt(text);
+    outputCode.textContent = code;
+    outputPanel.style.display = 'block';
+  });
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(outputCode.textContent).then(() => {
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1500);
+    });
+  });
+</script>
+
+</body>
+</html>
